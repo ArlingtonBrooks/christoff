@@ -7,6 +7,7 @@
 
 #include "Interface.hpp"
 #include "Types.hpp"
+#include "Formulas.hpp"
 
 #include <ncurses.h>
 #include <string> //string
@@ -67,6 +68,7 @@ private:
 	WINDOW* Handle;           ///<Owning pointer
 	int m_timeout = 0;        ///<Stored timeout
 	bool m_Active = false;    ///<Whether this is an active window
+	
 public:
 	ncurses_WindowHandle(const ncurses_WindowHandle&) = delete;
 	ncurses_WindowHandle& operator=(const ncurses_WindowHandle&) = delete;
@@ -107,6 +109,62 @@ public:
 		::touchwin(Handle);
 	}
 
+	/* Primitive draws */
+
+	virtual void DrawCircle(float Radius, Position<float> const &Loc, ColorType<unsigned char> Border, float BorderThickness, bool Fill = false, ColorType<unsigned char> FillColor = {0,0,0,0}) override {
+		throw std::runtime_error("Not Implemented");
+	}
+	virtual void DrawTriangle(Position<float> const &Pt1, Position<float> const &Pt2, Position<float> const &Pt3, ColorType<unsigned char> Border, float BorderThickness, Position<float> const &Offset = {0,0}, bool Fill = false, ColorType<unsigned char> FillColor = {0,0,0,0}) override {
+		throw std::runtime_error("Not Implemented");
+	}
+	virtual void DrawLine(Position<float> const &Pt1, Position<float> const &Pt2, Position<float> const &Pt3, ColorType<unsigned char> Border, float BorderThickness, Position<float> const &Offset = {0,0}, bool Fill = false, ColorType<unsigned char> FillColor = {0,0,0,0}) override {
+		throw std::runtime_error("Not Implemented");
+	}
+	/** Fill will be determined the following way:
+	 * R G B channels will be used to determine colour pair, as colour pairs will be limited:
+	 * 2: BLUE
+	 * 3: TEAL
+	 * 4: GREEN
+	 * 5: ORANGE
+	 * 6: RED
+	 * 7: PURPLE
+	 * 8: BLACK
+	 * 9: WHITE
+	 * A channel will determine whether a character is also printed to screen.  The A channel will print based on the following:
+	 * A < 25:  print '`'
+	 * A < 50:  print '"'
+	 * A < 75:  print '-'
+	 * A < 100: print '~'
+	 * A < 125: print ':'
+	 * A < 150: print '*'
+	 * A < 175: print '+'
+	 * A < 200: print '%'
+	 * A < 225: print 'O'
+	 * A < 250: print '8'
+	 * A = 255: '#' and fills entire block;
+	 * */
+	virtual void FillScreen(ColorType<unsigned char> FillColor) override {
+		if (FillColor.A == 255) {
+			if (FillColor.R > 10) FillColor.R -= 10;
+			wbkgd(Handle,COLOR_PAIR(FillColor.R) | '#');
+			return;
+		} else {
+			if (FillColor.R < 10) FillColor.R += 10;
+		}
+		if      (FillColor.A > 250) wbkgd(Handle,COLOR_PAIR(FillColor.R) | '#');
+		else if (FillColor.A > 225) wbkgd(Handle,COLOR_PAIR(FillColor.R) | '8');
+		else if (FillColor.A > 200) wbkgd(Handle,COLOR_PAIR(FillColor.R) | 'O');
+		else if (FillColor.A > 175) wbkgd(Handle,COLOR_PAIR(FillColor.R) | '%');
+		else if (FillColor.A > 150) wbkgd(Handle,COLOR_PAIR(FillColor.R) | '+');
+		else if (FillColor.A > 125) wbkgd(Handle,COLOR_PAIR(FillColor.R) | '*');
+		else if (FillColor.A > 100) wbkgd(Handle,COLOR_PAIR(FillColor.R) | ':');
+		else if (FillColor.A > 75 ) wbkgd(Handle,COLOR_PAIR(FillColor.R) | '~');
+		else if (FillColor.A > 50 ) wbkgd(Handle,COLOR_PAIR(FillColor.R) | '-');
+		else if (FillColor.A > 25 ) wbkgd(Handle,COLOR_PAIR(FillColor.R) | '"');
+		else if (FillColor.A > 0  ) wbkgd(Handle,COLOR_PAIR(FillColor.R) | '`');
+		else wbkgd(Handle,' ');
+	}
+
 	/** @brief Draw a character 
 	 * @param Y     Y-location to draw the character
 	 * @param X     X-location to draw the character
@@ -145,11 +203,84 @@ public:
 	}
 };
 
+struct NCursesVisual : public VisualOutput {
+private:
+	bool FlashState = false;
+	void SetFlashState(bool State, UserInterface const &UI) {
+		FlashState = State;
+		//this->clear();
+		if (has_colors()) {
+			if (State) Win->FillScreen({UI.VisualizationType,0,0,255});
+			else       Win->FillScreen({0,0,0,0}); //FIXME: this should be 2; why does only 1 work?
+		} else {
+			if (State) Win->FillScreen({1,0,0,255});
+			else       Win->FillScreen({0,0,0,0});
+		}
+	}
+public:
+	NCursesVisual(WindowHandle* W) {
+		Win = W;
+		FirstTick = std::chrono::steady_clock::now();
+		LastTick = FirstTick;
+		TickTimer = FirstTick;
+	}
+	virtual void DrawFlash(UserInterface const &UI) override { //FIXME: very sloppy for now; Definitely need to fix how we output to the window;
+		typedef std::chrono::milliseconds milliseconds;
+		milliseconds Diff = std::chrono::duration_cast<milliseconds>(std::chrono::steady_clock::now() - LastTick);
+		milliseconds DiffTick = std::chrono::duration_cast<milliseconds>(std::chrono::steady_clock::now() - TickTimer);
+		long unsigned MillisPerBeat = ComputeMillisecondsPerBeat(UI.BPM);
+		//FIXME: what should be the limit?
+		long unsigned local_FlashInterval = std::max(std::min(FlashInterval,(long long)MillisPerBeat / 6),(long long)24);
+		if ((long unsigned)DiffTick.count() > (long unsigned)(local_FlashInterval)) {
+			SetFlashState(false,UI);
+		}
+		//FIXME: should be based on actual time (use a counter up from first tick)
+			if ((long unsigned)Diff.count() > MillisPerBeat) {
+				SetFlashState(true,UI);
+				LastTick = std::chrono::steady_clock::now();
+				TickTimer = LastTick;
+			}
+
+	}
+	virtual void DrawMetronome(UserInterface const &UI) override {};
+	virtual void DrawRaindrops(UserInterface const &UI) override {};
+};
+
 struct NCursesDrawer : public Drawer {
 private:
 	std::size_t UI_Hash = 0;
-	std::unique_ptr<ncurses_InputHandler> m_Input;
+	std::unique_ptr<ncurses_InputHandler> m_Input; //should be in base class;
 	std::unordered_map<std::string,std::unique_ptr<ncurses_WindowHandle>> m_Children;
+	/**
+	 * R G B channels will be used to determine colour pair, as colour pairs will be limited:
+	 * 0 0 1: BLUE
+	 * 0 1 1: CYAN
+	 * 0 1 0: GREEN
+	 * 1 1 0: YELLOW
+	 * 1 0 0: RED
+	 * 1 0 1: MAGENTA
+	 * 0 0 0: BLACK
+	 * 1 1 1: WHITE
+	 * */
+	void SetColorPairs() {
+		start_color();
+		init_pair(2,COLOR_BLUE,COLOR_BLUE); //TODO: UserInput sets a colour scheme; we should make that set the flash colour;
+		init_pair(3,COLOR_CYAN,COLOR_CYAN);
+		init_pair(4,COLOR_GREEN,COLOR_GREEN);
+		init_pair(5,COLOR_YELLOW,COLOR_YELLOW);
+		init_pair(6,COLOR_RED,COLOR_RED);
+		init_pair(7,COLOR_MAGENTA,COLOR_MAGENTA);
+		init_pair(8,COLOR_BLACK,COLOR_BLACK);
+		init_pair(9,COLOR_WHITE,COLOR_WHITE);
+		init_pair(12,COLOR_BLUE,COLOR_BLACK);
+		init_pair(13,COLOR_CYAN,COLOR_BLACK);
+		init_pair(14,COLOR_GREEN,COLOR_BLACK);
+		init_pair(15,COLOR_YELLOW,COLOR_BLACK);
+		init_pair(16,COLOR_RED,COLOR_BLACK);
+		init_pair(17,COLOR_MAGENTA,COLOR_BLACK);
+		init_pair(18,COLOR_BLACK,COLOR_BLACK);
+		init_pair(19,COLOR_WHITE,COLOR_BLACK);
+	}
 public:
 	NCursesDrawer() {
 		initscr();
@@ -159,7 +290,8 @@ public:
 		curs_set(0);
 		noqiflush();
 		keypad(stdscr,true);
-		timeout(64);
+		timeout(2);
+		SetColorPairs();
 		refresh();
 		m_Input = std::make_unique<ncurses_InputHandler>(ncurses_InputHandler(stdscr));
 	}
@@ -210,7 +342,12 @@ public:
 		}
 	}
 	
-	virtual void UpdateVisual(UserInterface const &UI) override {};
+	virtual void UpdateVisual(UserInterface const &UI) override {
+		if (!m_VOut) return;
+		m_VOut->DrawFlash(UI);
+		m_VOut->DrawMetronome(UI);
+		m_VOut->DrawRaindrops(UI);
+	}
 
 	/** Create window for handling user inputs */
 	virtual void CreateInputWindow() override {
@@ -240,6 +377,7 @@ public:
 		//case Location::West: //create west
 		default: return;
 		}
+		m_VOut = std::make_unique<NCursesVisual>(NCursesVisual(m_Children["VisualWindow"].get()));
 	}
 };
 

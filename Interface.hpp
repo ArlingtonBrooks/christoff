@@ -4,10 +4,15 @@
 #include "Types.hpp"
 
 #include <array>      //array
+#include <chrono>     //std::chrono
 #include <functional> //hash
 #include <iomanip>    //precision
+#include <memory>     //unique_ptr
 #include <sstream>    //stringstream
 #include <string>     //string
+#include <stdexcept>  //exceptions
+
+const long long FlashInterval = 64; //milliseconds to flash up on screen;
 
 /** @brief User input interface */
 struct UserInterface {
@@ -124,11 +129,33 @@ struct WindowHandle {
 	virtual void redraw() = 0;
 	/** @brief Get the size of the window */
 	virtual BoxSize<int> GetSize() = 0;
+
+	/* Primitives */
+	virtual void DrawCircle(float Radius, Position<float> const &Loc, ColorType<unsigned char> Border, float BorderThickness, bool Fill = false, ColorType<unsigned char> FillColor = {0,0,0,0}) = 0;
+	virtual void DrawTriangle(Position<float> const &Pt1, Position<float> const &Pt2, Position<float> const &Pt3, ColorType<unsigned char> Border, float BorderThickness, Position<float> const &Offset = {0,0}, bool Fill = false, ColorType<unsigned char> FillColor = {0,0,0,0}) = 0;
+	virtual void DrawLine(Position<float> const &Pt1, Position<float> const &Pt2, Position<float> const &Pt3, ColorType<unsigned char> Border, float BorderThickness, Position<float> const &Offset = {0,0}, bool Fill = false, ColorType<unsigned char> FillColor = {0,0,0,0}) = 0;
+	virtual void FillScreen(ColorType<unsigned char> FillColor) = 0;
 };
 
+/** @brief Basic class for drawing visualizations to screen */
+struct VisualOutput {
+protected:
+	std::chrono::time_point<std::chrono::steady_clock> FirstTick;
+	std::chrono::time_point<std::chrono::steady_clock> LastTick;
+	std::chrono::time_point<std::chrono::steady_clock> TickTimer;
+public:
+	WindowHandle *Win; //Non-owning pointer to a window;
+	static constexpr bool IsVisualType() {return true;}
+	virtual void DrawFlash(UserInterface const &UI) = 0;
+	virtual void DrawMetronome(UserInterface const &UI) = 0;
+	virtual void DrawRaindrops(UserInterface const &UI) = 0;
+};
 
 /** @brief Basic class for drawing windows to screen */
 struct Drawer {
+protected:
+	std::unique_ptr<VisualOutput> m_VOut = nullptr;
+public:
 	Location Orientation = Location::North; ///<Orientation of the user interface
 	void SetOrientation(Location L) {
 		Orientation = L;
