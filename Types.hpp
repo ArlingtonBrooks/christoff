@@ -5,6 +5,8 @@
 #include <cmath>
 #include <type_traits>
 
+inline void Unused(...) { }
+
 /** @brief North/south/east/west enum */
 enum class Location {
 	North = 0, ///<Top of the screen
@@ -13,45 +15,49 @@ enum class Location {
 	West       ///<Left of the screen
 };
 
+/** @brief A data structure for an arbitrary box */
 template <typename NumberType = int>
 struct BoxSize {
 	NumberType X;
 	NumberType Y;
 };
 
+/** Check if two BoxSizes are equal */
 template <typename NumberType = int>
 inline bool operator!=(BoxSize<NumberType>& A, BoxSize<NumberType>& B) {
 	return (A.X != B.X) && (A.Y != B.Y);
 }
+/** Check if two BoxSizes are equal */
 template <typename NumberType = int>
 inline bool operator==(BoxSize<NumberType>& A, BoxSize<NumberType>& B) {
 	return (A.X == B.X) && (A.Y == B.Y);
 }
 
+/** Re-use BoxSize under the name Position */
 template <typename NumberType>
 using Position = BoxSize<NumberType>;
 
 /** @brief A list of (hopefully to-be-added) visualizations */
 enum class Visualization : unsigned char {
-	Pendulum,
-	ParticlesTopDown,
-	ParticlesBottomUp,
-	ParticlesLeftToRight,
-	ParticlesRightToLeft,
-	ProgressTopDown,
-	ProgressBottomUp,
-	ProgressLeftToRight,
-	ProgressRightToLeft,
-	FlashOnly
+	Pendulum,             //Pendulum
+	ParticlesTopDown,     //Raindrops
+	ParticlesBottomUp,    //Raindrops
+	ParticlesLeftToRight, //Raindrops
+	ParticlesRightToLeft, //Raindrops
+	ProgressTopDown,      //TimeBar
+	ProgressBottomUp,     //TimeBar
+	ProgressLeftToRight,  //TimeBar
+	ProgressRightToLeft,  //TimeBar
+	FlashOnly             //None
 };
 
 /** @brief A container for colors */
 template <typename Base>
 struct ColorType {
-	Base R;
-	Base G;
-	Base B;
-	Base A;
+	Base R; //Red
+	Base G; //Green
+	Base B; //Blue
+	Base A; //Alpha
 };
 
 /** @brief Time signature */
@@ -61,23 +67,11 @@ struct Signature {
 };
 
 /** @brief Container for window size in x- and y- directions */
-struct WindowSizeContainer {
-	int X;
-	int Y;
-};
+using WindowSizeContainer = BoxSize<int>;
 
 /** @brief Container for a floating point location */
 template <typename LengthType = float>
-struct LocationContainer {
-	LengthType X;
-	LengthType Y;
-	bool operator!=(LocationContainer const &a) {
-		return (a.X != X || a.Y != Y);
-	}
-	bool operator==(LocationContainer const &a) {
-		return (a.X == X && a.Y == Y);
-	}
-};
+using LocationContainer = BoxSize<LengthType>;
 
 /** @brief A vector of some length starting at coordinates (0,0) and ending at end point (X,Y) */
 template <typename NumberType = float>
@@ -85,28 +79,30 @@ struct LengthVector {
 	static_assert(std::is_floating_point<NumberType>::value);
 	NumberType X;
 	NumberType Y;
-	LengthVector(LocationContainer<NumberType> const &Start, LocationContainer<NumberType> const &End) :
-		X(End.X - Start.X),
-		Y(End.Y - Start.Y) {}
 	LengthVector(Position<NumberType> const &Start, Position<NumberType> const &End) :
 		X(End.X - Start.X),
 		Y(End.Y - Start.Y) {}
+	/** @brief Compute a vector which is 90 degrees from the given vector */
 	LengthVector Normal() const {
 		LengthVector ret(*this);
 		std::swap(ret.X,ret.Y);
 		ret.Y = -ret.Y;
 		return ret;
 	}
+
+	/** @brief Connvert to unit vector */
 	void Normalize() {
-		if (Length() == 0) {
+		NumberType Len = Length();
+		if (Len == 0) {
 			X = 0;
 			Y = 0;
 		} else {
-			X /= Length();
-			Y /= Length();
+			X /= Len;
+			Y /= Len;
 		}
-
 	}
+
+	/** @brief Compute the lengt of the vector */
 	NumberType Length() const {
 		return sqrt(X*X + Y*Y);
 	}
@@ -115,11 +111,15 @@ struct LengthVector {
 		NumberType A = (P.X * X + P.Y * Y) / (X*X + Y*Y);
 		return A;
 	}
+
+	/** @brief Multiply length vector by a factor */
 	LengthVector operator*(NumberType Factor) {
 		X *= Factor;
 		Y *= Factor;
 		return *this;
 	}
+
+	/** @brief Divide the length vector by a factor */
 	LengthVector operator/(NumberType Factor) {
 		X *= Factor;
 		Y *= Factor;
@@ -130,7 +130,7 @@ struct LengthVector {
 /** A basic circle */
 template <typename NumberType = float>
 struct Circle {
-	NumberType Radius;
+	NumberType Radius; ///<Radius of a circle
 	/** @brief Check if a location relative to the center is inside the radius */
 	bool IsInside(Position<NumberType> const &P) {
 		return (P.X * P.X + P.Y * P.Y) < (Radius * Radius);
@@ -145,9 +145,9 @@ struct Circle {
 /** A basic triangle */
 template <typename NumberType = float>
 struct Triangle {
-	Position<NumberType> Pt1;
-	Position<NumberType> Pt2;
-	Position<NumberType> Pt3;
+	Position<NumberType> Pt1; ///<First point in a triangle
+	Position<NumberType> Pt2; ///<Second point in a triangle
+	Position<NumberType> Pt3; ///<Third poitn in a triangle
 	/** @brief Check if a location relative to the center is inside the radius */
 	bool IsInside(Position<NumberType> const &P) {
 		NumberType Len1 = std::pow((Pt1.X - Pt2.X),2) + std::pow((Pt1.Y - Pt2.Y),2);
@@ -208,11 +208,11 @@ public:
 
 /** @brief A structure containing the inputs for controlling the visualization */
 struct UserInputs {
-	Signature TimeSignature {4,4};
-	float BPM {120};
-	unsigned char ColorScheme {0};
-	Visualization Vis {Visualization::FlashOnly};
-	bool Flashing {false};
+	Signature TimeSignature {4,4};                ///<Time signature
+	float BPM {120};                              ///<Beat per minute
+	unsigned char ColorScheme {0};                ///<Colour selection
+	Visualization Vis {Visualization::FlashOnly}; ///<Visualization
+	bool Flashing {false};                        ///<Whether to flash
 };
 
 #endif //TYPES_HPP_

@@ -25,7 +25,7 @@ struct UserInterface {
 		FLASHING = 4
 	};
 	const unsigned char MaxVisualizations = 10;   ///<Maximum number to display for visualizations
-	const int MaxColors = 10;                     ///<Maximum number of colour patterns
+	const int MaxColors = 7;                      ///<Maximum number of colour patterns
 	std::array<std::string,5> Labels;             ///<Array of output labels
 	int CurrentSelection = 0;                     ///<Currently selected field
 	float BPM = 120;                              ///<Beats per minute field
@@ -35,6 +35,7 @@ struct UserInterface {
 	unsigned char VisualizationType = 0;          ///<Selected visualization
 	bool Flashing = false;                        ///<Whether to flash the screen at intervals
 
+	/** @brief UI Element selector (change CurrentSelection based on input) */
 	void MoveSelection(char direction) {
 		if (direction > 0) {
 			if (CurrentSelection < 4) CurrentSelection += 1;
@@ -44,7 +45,10 @@ struct UserInterface {
 			else CurrentSelection = 4;
 		}
 	}
-	void SetBPM(float newBPM) {BPM = newBPM;}
+	/** @brief Set the BPM value */
+	void SetBPM(float newBPM) {BPM = std::max(0.01f,std::min(newBPM,350.0f));}
+
+	/** @brief UI Color selection (change Color based on input) */
 	void SetColor(char direction) {
 		if (direction > 0) {
 			if (Color < MaxColors) Color += 1;
@@ -54,7 +58,11 @@ struct UserInterface {
 			else Color = MaxColors;
 		}
 	}
+
+	/** @brief Set the time signature based on inputs */
 	void SetSignature(short upper, short lower) {Signature_Upper = upper; Signature_Lower = lower;}
+
+	/** @brief UI Visualization selection (change visualization based on input) */
 	void SetVisualization(char direction) {
 		if (direction > 0) {
 			if (VisualizationType < MaxVisualizations) VisualizationType += 1;
@@ -64,8 +72,13 @@ struct UserInterface {
 			else VisualizationType = MaxVisualizations;
 		}
 	}
+
+	/** @brief Set flashing selection (inverse of what is currently selected) */
 	void ToggleFlashing() {Flashing = !Flashing;}
+
+	/** @brief Returns the number of labels available (this MUST be updated if options are added to the UI) */
 	constexpr int NumberOfLabels() {return 5;}
+
 	/** @brief Rewrites label strings */
 	std::string GetLabel(int index) {
 		Selection Sel = (Selection)(index);
@@ -88,7 +101,7 @@ struct UserInterface {
 	}
 
 	/** @brief Computes a "hash" of the user input selections */
-	std::size_t hash() {
+	std::size_t hash() const {
 		std::size_t hash = 99194853094755497;
 		std::size_t I = std::hash<int>()(CurrentSelection);
 		hash = ((hash << 5) + hash) + I;
@@ -131,36 +144,41 @@ struct WindowHandle {
 	virtual BoxSize<int> GetSize() = 0;
 
 	/* Primitives */
+	/** @brief Draw a circle of radius at a location with a border color, thickness, and optional fill */
 	virtual void DrawCircle(float Radius, Position<float> const &Loc, ColorType<unsigned char> Border, float BorderThickness, bool Fill = false, ColorType<unsigned char> FillColor = {0,0,0,0}) = 0;
+	/** @brief Draw a triangle based on 3 points with a border, thickness, offset, and fill options */
 	virtual void DrawTriangle(Position<float> const &Pt1, Position<float> const &Pt2, Position<float> const &Pt3, ColorType<unsigned char> Border, float BorderThickness, Position<float> const &Offset = {0,0}, bool Fill = false, ColorType<unsigned char> FillColor = {0,0,0,0}) = 0;
-	virtual void DrawLine(Position<float> const &Pt1, Position<float> const &Pt2, Position<float> const &Pt3, ColorType<unsigned char> Border, float BorderThickness, Position<float> const &Offset = {0,0}, bool Fill = false, ColorType<unsigned char> FillColor = {0,0,0,0}) = 0;
+	/** @brief Draw a line between two points with a border, thickness, and offset */
+	virtual void DrawLine(Position<float> const &Pt1, Position<float> const &Pt2, float Thickness, Position<float> const &Offset = {0,0}) = 0;
+	/** @brief Fill entire screenn with a colour */
 	virtual void FillScreen(ColorType<unsigned char> FillColor) = 0;
 };
 
 /** @brief Basic class for drawing visualizations to screen */
 struct VisualOutput {
 protected:
-	std::chrono::time_point<std::chrono::steady_clock> FirstTick;
-	std::chrono::time_point<std::chrono::steady_clock> LastTick;
-	std::chrono::time_point<std::chrono::steady_clock> TickTimer;
+	std::chrono::time_point<std::chrono::steady_clock> FirstTick; ///<The first metronome tick time
+	std::chrono::time_point<std::chrono::steady_clock> LastTick;  ///<The last time the metronome ticked
+	std::chrono::time_point<std::chrono::steady_clock> TickTimer; ///<A timer used to control the amount of time a 'flash' is on screen
+	long long FlashCounter = 0;                                   ///<A counter for the number of times the metronome has ticked
 public:
-	WindowHandle *Win; //Non-owning pointer to a window;
-	static constexpr bool IsVisualType() {return true;}
-	virtual void DrawFlash(UserInterface const &UI) = 0;
-	virtual void DrawMetronome(UserInterface const &UI) = 0;
-	virtual void DrawRaindrops(UserInterface const &UI) = 0;
+	WindowHandle *Win;                                            ///<Non-owning pointer to a window;
+	static constexpr bool IsVisualType() {return true;}           ///<Returns that any derived classes are of visual type (guaranteeing certain draw options)
+	virtual void DrawFlash(UserInterface const &UI) = 0;          ///<Draw the flash visualization
+	virtual void DrawMetronome(UserInterface const &UI) = 0;      ///<Draw the metronome visualization
+	virtual void DrawRaindrops(UserInterface const &UI) = 0;      ///<Draw the raindrops visualization
 };
 
 /** @brief Basic class for drawing windows to screen */
 struct Drawer {
 protected:
-	std::unique_ptr<VisualOutput> m_VOut = nullptr;
+	std::unique_ptr<VisualOutput> m_VOut = nullptr;               ///<Visual output owning pointer (should be contained within the drawer)
 public:
-	Location Orientation = Location::North; ///<Orientation of the user interface
+	Location Orientation = Location::North;                       ///<Orientation of the user interface (TODO: this should be configurable?)
 	void SetOrientation(Location L) {
 		Orientation = L;
 	}
-	static constexpr bool IsDrawerType() {return true;}
+	static constexpr bool IsDrawerType() {return true;}           ///<Returns that any derived classes are of Drawer type (guaranteeing certain functions)
 	/** @brief Redraw all elements on the window */
 	virtual void Redraw() = 0;
 	/** @brief Refresh the window */
@@ -177,7 +195,9 @@ public:
 	virtual void CreateVisualWindow() = 0;
 };
 
-/** @brief User input handling */
+/** @brief User input handling 
+ * This class acts as an interface between the output system (be it ncurses, opengl, webgui, etc) and the UserInterface class allowing any arbitrary input to be translated to something that can modify the UserInterface options
+ */
 struct PipeInputToUI {
 	static constexpr bool IsInputHandler() {return true;}
 	/** @brief Pipe user's keyboard input to the user interface */
@@ -194,9 +214,9 @@ class MainWindow {
 	static_assert(WindowSystem::IsDrawerType(),"Window system must be derived from Drawer type");
 	static_assert(InputSystem::IsInputHandler(),"Input system must be derived from PipeInputToUI type");
 private:
-	UserInterface m_UI;
-	WindowSystem m_WS;
-	InputSystem m_Input;
+	UserInterface m_UI;                                ///<The user interface
+	WindowSystem m_WS;                                 ///<The window system to be used for output
+	InputSystem m_Input;                               ///<The system by which input is captured
 public:
 	MainWindow() {
 		m_WS.CreateInputWindow();
@@ -204,28 +224,36 @@ public:
 		Refresh();
 	}
 	
+	/** @brief Refresh the screen without necessarily redrawing everything */
 	void Refresh() {
 		m_WS.Refresh();
 	}
 
+	/** @brief Force redraw everything on screen */
 	void Redraw() {
 		m_WS.Redraw();
 		m_WS.Refresh();
 	}
 
+	/** @brief Draw the screen in its current state */
 	void Draw() {
 		PrintUI();
 		UpdateVisual();
 	}
 
+	/** @brief Print the UI in its current state */
 	void PrintUI() {
 		m_WS.PrintUI(m_UI);
 	}
 
+	/** @brief Update the visual output */
 	void UpdateVisual() {
 		m_WS.UpdateVisual(m_UI);
 	}
 
+	/** @brief Get input from the input system. 
+	 * TODO: In the future, we may need to include parser for mouse, midi, or other options
+	 */
 	void HandleInput(bool &Running) {
 		int Keypress = m_Input.Keyboard(m_UI);
 		if (Keypress == 'q') Running = false; //exit key
