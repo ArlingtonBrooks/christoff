@@ -47,7 +47,7 @@ public:
 		return ::wgetch(Handle);
 	}
 
-	/** @todo: this would be nice if it could make a textbox popup */
+	/** @todo: this would be nice if it could make a textbox or window popup */
 	virtual std::string GetStringInput() override {
 		::wtimeout(Handle,0);
 		std::string str;
@@ -94,6 +94,7 @@ public:
 		delwin(Handle);
 	}
 
+	/** @brief Return whether this is "active" or "alive" */
 	virtual bool IsActive() const override {return m_Active;}
 
 	/** @brief Return a handle to the window */
@@ -110,26 +111,29 @@ public:
 	}
 
 	/* Primitive draws */
-
 	virtual void DrawCircle(float Radius, Position<float> const &Loc, ColorType<unsigned char> Border, float BorderThickness, bool Fill = false, ColorType<unsigned char> FillColor = {0,0,0,0}) override {
+		Unused(Radius, Loc, Border, BorderThickness, Fill, FillColor);
 		throw std::runtime_error("Not Implemented");
 	}
 	virtual void DrawTriangle(Position<float> const &Pt1, Position<float> const &Pt2, Position<float> const &Pt3, ColorType<unsigned char> Border, float BorderThickness, Position<float> const &Offset = {0,0}, bool Fill = false, ColorType<unsigned char> FillColor = {0,0,0,0}) override {
+		Unused(Pt1, Pt2, Pt3, Border, BorderThickness, Offset, Fill, FillColor);
 		throw std::runtime_error("Not Implemented");
 	}
-	virtual void DrawLine(Position<float> const &Pt1, Position<float> const &Pt2, Position<float> const &Pt3, ColorType<unsigned char> Border, float BorderThickness, Position<float> const &Offset = {0,0}, bool Fill = false, ColorType<unsigned char> FillColor = {0,0,0,0}) override {
+	virtual void DrawLine(Position<float> const &Pt1, Position<float> const &Pt2, float Thickness, Position<float> const &Offset = {0,0}) override {
+		Unused(Pt1, Pt2, Thickness, Offset);
 		throw std::runtime_error("Not Implemented");
 	}
+
 	/** Fill will be determined the following way:
 	 * R G B channels will be used to determine colour pair, as colour pairs will be limited:
-	 * 2: BLUE
-	 * 3: TEAL
-	 * 4: GREEN
-	 * 5: ORANGE
-	 * 6: RED
-	 * 7: PURPLE
-	 * 8: BLACK
-	 * 9: WHITE
+	 * R=2: BLUE
+	 * R=3: TEAL
+	 * R=4: GREEN
+	 * R=5: ORANGE
+	 * R=6: RED
+	 * R=7: PURPLE
+	 * R=8: BLACK
+	 * R=9: WHITE
 	 * A channel will determine whether a character is also printed to screen.  The A channel will print based on the following:
 	 * A < 25:  print '`'
 	 * A < 50:  print '"'
@@ -142,7 +146,7 @@ public:
 	 * A < 225: print 'O'
 	 * A < 250: print '8'
 	 * A = 255: '#' and fills entire block;
-	 * */
+	 */
 	virtual void FillScreen(ColorType<unsigned char> FillColor) override {
 		if (FillColor.A == 255) {
 			if (FillColor.R > 10) FillColor.R -= 10;
@@ -203,19 +207,26 @@ public:
 	}
 };
 
+/** @brief NCurses implementation of VisualOutput */
 struct NCursesVisual : public VisualOutput {
 private:
-	bool FlashState = false;
+	std::size_t UI_Hash = 0;
+	bool FlashState = false; ///<The flashing state
+	/** @brief Sets the flash state on the screen */
 	void SetFlashState(bool State, UserInterface const &UI) {
 		FlashState = State;
-		//this->clear();
 		if (has_colors()) {
-			if (State) Win->FillScreen({UI.VisualizationType,0,0,255});
+			if (State) Win->FillScreen({(unsigned char)(UI.Color+2),0,0,255});
 			else       Win->FillScreen({0,0,0,0}); //FIXME: this should be 2; why does only 1 work?
 		} else {
 			if (State) Win->FillScreen({1,0,0,255});
 			else       Win->FillScreen({0,0,0,0});
 		}
+	}
+	/** @brief Reset the flash timer */
+	void reset() {
+		FirstTick = std::chrono::steady_clock::now();
+		FlashCounter = 1;
 	}
 public:
 	NCursesVisual(WindowHandle* W) {
@@ -224,44 +235,42 @@ public:
 		LastTick = FirstTick;
 		TickTimer = FirstTick;
 	}
+	virtual ~NCursesVisual() = default;
+
+	/** @brief Draw a flash on the screen */
 	virtual void DrawFlash(UserInterface const &UI) override { //FIXME: very sloppy for now; Definitely need to fix how we output to the window;
+		if (UI.hash() != UI_Hash) { //Avoid locking the output
+			UI_Hash = UI.hash();
+			reset();
+		} else if (!UI.Flashing) {
+			reset();
+		}
 		typedef std::chrono::milliseconds milliseconds;
-		milliseconds Diff = std::chrono::duration_cast<milliseconds>(std::chrono::steady_clock::now() - LastTick);
+		milliseconds Diff = std::chrono::duration_cast<milliseconds>(std::chrono::steady_clock::now() - FirstTick);
 		milliseconds DiffTick = std::chrono::duration_cast<milliseconds>(std::chrono::steady_clock::now() - TickTimer);
 		long unsigned MillisPerBeat = ComputeMillisecondsPerBeat(UI.BPM);
-		//FIXME: what should be the limit?
 		long unsigned local_FlashInterval = std::max(std::min(FlashInterval,(long long)MillisPerBeat / 6),(long long)24);
 		if ((long unsigned)DiffTick.count() > (long unsigned)(local_FlashInterval)) {
 			SetFlashState(false,UI);
 		}
-		//FIXME: should be based on actual time (use a counter up from first tick)
-			if ((long unsigned)Diff.count() > MillisPerBeat) {
-				SetFlashState(true,UI);
-				LastTick = std::chrono::steady_clock::now();
-				TickTimer = LastTick;
-			}
-
+		if ((long unsigned)Diff.count() > MillisPerBeat * FlashCounter) {
+			SetFlashState(true,UI);
+			LastTick = std::chrono::steady_clock::now();
+			TickTimer = LastTick;
+			FlashCounter += 1;
+		}
 	}
-	virtual void DrawMetronome(UserInterface const &UI) override {};
-	virtual void DrawRaindrops(UserInterface const &UI) override {};
+	virtual void DrawMetronome(UserInterface const &UI) override { Unused(UI);};
+	virtual void DrawRaindrops(UserInterface const &UI) override { Unused(UI);};
 };
 
+/** @brief NCurses implementation of the drawing functions */
 struct NCursesDrawer : public Drawer {
 private:
-	std::size_t UI_Hash = 0;
-	std::unique_ptr<ncurses_InputHandler> m_Input; //should be in base class;
-	std::unordered_map<std::string,std::unique_ptr<ncurses_WindowHandle>> m_Children;
-	/**
-	 * R G B channels will be used to determine colour pair, as colour pairs will be limited:
-	 * 0 0 1: BLUE
-	 * 0 1 1: CYAN
-	 * 0 1 0: GREEN
-	 * 1 1 0: YELLOW
-	 * 1 0 0: RED
-	 * 1 0 1: MAGENTA
-	 * 0 0 0: BLACK
-	 * 1 1 1: WHITE
-	 * */
+	std::size_t UI_Hash = 0;                                                           ///<The UI hash used to determine whether a draw needs to occur
+	std::unique_ptr<ncurses_InputHandler> m_Input;                                     ///<Owning pointer for the input handler
+	std::unordered_map<std::string,std::unique_ptr<ncurses_WindowHandle>> m_Children;  ///<A map of window handles
+	/** Set NCurses color pairs */
 	void SetColorPairs() {
 		start_color();
 		init_pair(2,COLOR_BLUE,COLOR_BLUE); //TODO: UserInput sets a colour scheme; we should make that set the flash colour;
@@ -296,7 +305,7 @@ public:
 		m_Input = std::make_unique<ncurses_InputHandler>(ncurses_InputHandler(stdscr));
 	}
 
-	~NCursesDrawer() {
+	virtual ~NCursesDrawer() {
 		m_Children.clear();
 		endwin();
 	}
@@ -342,6 +351,7 @@ public:
 		}
 	}
 	
+	/** Update the visuals */
 	virtual void UpdateVisual(UserInterface const &UI) override {
 		if (!m_VOut) return;
 		m_VOut->DrawFlash(UI);
@@ -381,31 +391,35 @@ public:
 	}
 };
 
+/** @brief NCurses implementation of the input pipe */
 struct ncurses_InputPipe : public PipeInputToUI {
 private:
+	/** @brief Handle the user "selection" key */
 	void HandleSelectionKey(UserInterface &UI) {
 		switch ((UserInterface::Selection)(UI.CurrentSelection)) {
-		case UserInterface::Selection::TIMESIGNATURE: break; //need to create window
-		case UserInterface::Selection::BEATSPERMIN: break; //need to create window
-		case UserInterface::Selection::COLORSEL: break; //Not applicable
-		case UserInterface::Selection::VISUALIZATION: break; //Not applicable
+		case UserInterface::Selection::TIMESIGNATURE: break;                  //need to create window
+		case UserInterface::Selection::BEATSPERMIN: break;                    //need to create window
+		case UserInterface::Selection::COLORSEL: break;                       //Not applicable
+		case UserInterface::Selection::VISUALIZATION: break;                  //Not applicable
 		case UserInterface::Selection::FLASHING: UI.ToggleFlashing(); break;
 		default: break;
 		}
 	}
+
+	/** @brief Handle the user's keyboard arrow key input */
 	void HandleArrowKey(UserInterface &UI, char Direction) {
 		switch ((UserInterface::Selection)(UI.CurrentSelection)) {
 		case UserInterface::Selection::TIMESIGNATURE: break; //N/A
-		case UserInterface::Selection::BEATSPERMIN: 
+		case UserInterface::Selection::BEATSPERMIN:   //Increment BPM
 			UI.BPM += (Direction > 0) - (UI.BPM > 1.0f && Direction < 0); 
 			break;
-		case UserInterface::Selection::COLORSEL:
+		case UserInterface::Selection::COLORSEL:      //Increment color
 			UI.SetColor((Direction > 0) - (Direction < 0));
 			break;
-		case UserInterface::Selection::VISUALIZATION:
+		case UserInterface::Selection::VISUALIZATION: //Increment visualization
 			UI.SetVisualization(Direction);
 			break;
-		case UserInterface::Selection::FLASHING: 
+		case UserInterface::Selection::FLASHING:      //Increment flashing
 			UI.ToggleFlashing(); 
 			break;
 		default: break;
