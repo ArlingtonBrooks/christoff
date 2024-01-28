@@ -101,12 +101,12 @@ public:
 	WINDOW* GetHandle() {return Handle;}
 
 	/** @brief Refresh the window */
-	virtual void refresh() override {
+	virtual void Refresh() override {
 		::wrefresh(Handle);
 	}
 
 	/** @brief Redraw whole window */
-	virtual void redraw() override {
+	virtual void Redraw() override {
 		::touchwin(Handle);
 	}
 
@@ -301,7 +301,7 @@ public:
 		keypad(stdscr,true);
 		timeout(2);
 		SetColorPairs();
-		refresh();
+		Refresh();
 		m_Input = std::make_unique<ncurses_InputHandler>(ncurses_InputHandler(stdscr));
 	}
 
@@ -313,8 +313,8 @@ public:
 	/** Redraw everything on screen */
 	virtual void Redraw() override {
 		for (auto &Window : m_Children) {
-			Window.second->redraw();
-			Window.second->refresh();
+			Window.second->Redraw();
+			Window.second->Refresh();
 		}
 		Refresh();
 	}
@@ -322,7 +322,7 @@ public:
 	/** Refresh all windows */
 	virtual void Refresh() override {
 		for (auto &Window : m_Children) {
-			Window.second->refresh();
+			Window.second->Refresh();
 		}
 		::refresh();
 	}

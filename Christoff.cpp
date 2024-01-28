@@ -14,7 +14,7 @@ int main(int, char**) {
 	NCursesDrawer NCD;
 	ncurses_WindowHandle Win(11,48,NCD.GetWindowSize().Y/2-5,NCD.GetWindowSize().X/2-(48/2),' ');
 	mvwprintw(Win.GetHandle(),0,0,"%s",TheWarning);
-	Win.refresh();
+	Win.Refresh();
 	NCD.Refresh();
 	timeout(-1);
 	getch();

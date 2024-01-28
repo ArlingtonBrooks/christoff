@@ -137,9 +137,9 @@ struct WindowHandle {
 	/** @brief Return whether this window is currently active/drawing */
 	virtual bool IsActive() const = 0;
 	/** @brief Refresh the window */
-	virtual void refresh() = 0;
+	virtual void Refresh() = 0;
 	/** @brief Force redrawing all elements on the window */
-	virtual void redraw() = 0;
+	virtual void Redraw() = 0;
 	/** @brief Get the size of the window */
 	virtual BoxSize<int> GetSize() = 0;
 
