@@ -17,14 +17,18 @@ int main(int, char**) {
 	Win.Refresh();
 	NCD.Refresh();
 	timeout(-1);
-	getch();
+	int i = getch();
+	if (i != 'y') {
+		return 0;
+	}
 	}
 
 	MainWindow<NCursesDrawer,ncurses_InputPipe> Win;
 	bool Running = true;
 	while (Running) {
-		Win.HandleInput(Running);
+		FullInput Interaction = Win.HandleInput(Running);
 		Win.Draw();
 		Win.Refresh();
 	}
+	return 0;
 }

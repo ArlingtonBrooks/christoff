@@ -215,4 +215,13 @@ struct UserInputs {
 	bool Flashing {false};                        ///<Whether to flash
 };
 
+/** @brief A structure capturing all user input events */
+struct FullInput {
+	int Keypress;
+	int MouseButton;
+	Position<int> MouseLocation;
+	bool MouseMoved;
+	//add to end of this
+};
+
 #endif //TYPES_HPP_

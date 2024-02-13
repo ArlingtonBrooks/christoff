@@ -142,6 +142,10 @@ struct WindowHandle {
 	virtual void Redraw() = 0;
 	/** @brief Get the size of the window */
 	virtual BoxSize<int> GetSize() = 0;
+	/** @brief Resize the window */
+	virtual void resize(int ysz, int xsz) = 0;
+	/** @brief Move the window */
+	virtual void move(int ypt, int xpt) = 0;
 
 	/* Primitives */
 	/** @brief Draw a circle of radius at a location with a border color, thickness, and optional fill */
@@ -167,6 +171,7 @@ public:
 	virtual void DrawFlash(UserInterface const &UI) = 0;          ///<Draw the flash visualization
 	virtual void DrawMetronome(UserInterface const &UI) = 0;      ///<Draw the metronome visualization
 	virtual void DrawRaindrops(UserInterface const &UI) = 0;      ///<Draw the raindrops visualization
+	virtual void ForceRedraw() = 0;                               ///<Force the entire output to be redrawn
 };
 
 /** @brief Basic class for drawing windows to screen */
@@ -193,6 +198,8 @@ public:
 	virtual void CreateInputWindow() = 0;
 	/** @brief Create the visuals section of the screen */
 	virtual void CreateVisualWindow() = 0;
+	/** @brief Handle full user's input */
+	virtual void HandleInput(FullInput const &Interaction) = 0;
 };
 
 /** @brief User input handling 
@@ -254,9 +261,15 @@ public:
 	/** @brief Get input from the input system. 
 	 * TODO: In the future, we may need to include parser for mouse, midi, or other options
 	 */
-	void HandleInput(bool &Running) {
-		int Keypress = m_Input.Keyboard(m_UI);
-		if (Keypress == 'q') Running = false; //exit key
+	FullInput HandleInput(bool &Running) {
+		FullInput Ret;
+		Ret.Keypress = m_Input.Keyboard(m_UI);
+		if (Ret.Keypress == 'q') { 
+			Running = false; //exit key
+		} else {
+			m_WS.HandleInput(Ret);
+		}
+		return Ret;
 	}
 };
 

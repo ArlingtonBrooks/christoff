@@ -66,6 +66,7 @@ public:
 struct ncurses_WindowHandle : public WindowHandle {
 private:
 	WINDOW* Handle;           ///<Owning pointer
+	char m_border;
 	int m_timeout = 0;        ///<Stored timeout
 	bool m_Active = false;    ///<Whether this is an active window
 	
@@ -85,6 +86,7 @@ public:
 		if (border != 0) {
 			wborder(Handle, border, border, border, border, border, border, border, border);
 		}
+		m_border = border;
 		m_Active = true;
 		wrefresh(Handle);
 	}
@@ -107,6 +109,11 @@ public:
 
 	/** @brief Redraw whole window */
 	virtual void Redraw() override {
+		wclear(Handle);
+		box(Handle,0,0);
+		if (m_border != 0) {
+			wborder(Handle, m_border, m_border, m_border, m_border, m_border, m_border, m_border, m_border);
+		}
 		::touchwin(Handle);
 	}
 
@@ -228,6 +235,9 @@ private:
 		FirstTick = std::chrono::steady_clock::now();
 		FlashCounter = 1;
 	}
+	void TriggerUIRedraw() {
+		UI_Hash -= 1;
+	}
 public:
 	NCursesVisual(WindowHandle* W) {
 		Win = W;
@@ -262,6 +272,10 @@ public:
 	}
 	virtual void DrawMetronome(UserInterface const &UI) override { Unused(UI);};
 	virtual void DrawRaindrops(UserInterface const &UI) override { Unused(UI);};
+	virtual void ForceRedraw() override {
+		TriggerUIRedraw();
+		Win->Redraw();
+	}
 };
 
 /** @brief NCurses implementation of the drawing functions */
@@ -270,6 +284,7 @@ private:
 	std::size_t UI_Hash = 0;                                                           ///<The UI hash used to determine whether a draw needs to occur
 	std::unique_ptr<ncurses_InputHandler> m_Input;                                     ///<Owning pointer for the input handler
 	std::unordered_map<std::string,std::unique_ptr<ncurses_WindowHandle>> m_Children;  ///<A map of window handles
+	bool ForceRedraw = false;
 	/** Set NCurses color pairs */
 	void SetColorPairs() {
 		start_color();
@@ -289,6 +304,9 @@ private:
 		init_pair(17,COLOR_MAGENTA,COLOR_BLACK);
 		init_pair(18,COLOR_BLACK,COLOR_BLACK);
 		init_pair(19,COLOR_WHITE,COLOR_BLACK);
+	}
+	void TriggerUIRedraw() {
+		UI_Hash -= 1;
 	}
 public:
 	NCursesDrawer() {
@@ -337,11 +355,11 @@ public:
 	/** Print the user interface in its current state */
 	virtual void PrintUI(UserInterface &UI) override {
 		std::size_t NewUI = UI.hash();
-		if (NewUI == UI_Hash) {return;}
+		if (NewUI == UI_Hash && !ForceRedraw) {return;}
 		else {UI_Hash = NewUI;}
 		WINDOW* tUI = m_Children["InputWindow"]->GetHandle();
-		//wclear(tUI);
-		//box(tUI,0,0);
+		wclear(tUI);
+		box(tUI,0,0);
 		int nLabels = UI.NumberOfLabels();
 		for (int i = 0; i != nLabels; i++) {
 			if (i == UI.CurrentSelection) {wattrset(tUI,A_STANDOUT);}
@@ -353,6 +371,9 @@ public:
 	
 	/** Update the visuals */
 	virtual void UpdateVisual(UserInterface const &UI) override {
+		if (ForceRedraw) {
+			m_VOut->ForceRedraw();
+		}
 		if (!m_VOut) return;
 		m_VOut->DrawFlash(UI);
 		m_VOut->DrawMetronome(UI);
@@ -388,6 +409,30 @@ public:
 		default: return;
 		}
 		m_VOut = std::make_unique<NCursesVisual>(NCursesVisual(m_Children["VisualWindow"].get()));
+	}
+
+	/** Process a resize event */
+	void ProcessResize() {
+		BoxSize<int> const WinSize = GetWindowSize();
+		switch (Orientation) {
+		case Location::North: {
+			m_Children.at("InputWindow")->resize(7,WinSize.X);
+			m_Children.at("VisualWindow")->resize(WinSize.Y-7,WinSize.X);
+			break;
+		}
+		}
+		TriggerUIRedraw();
+		Redraw();
+	}
+
+	/** Implementation of local input handler */
+	void HandleInput(FullInput const &Interaction) {
+		ForceRedraw = false;
+		if (Interaction.Keypress == KEY_RESIZE) {
+			ForceRedraw = true;
+			ProcessResize();
+			Refresh();
+		}
 	}
 };
 
